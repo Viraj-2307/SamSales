@@ -886,10 +886,6 @@ import json
 import gspread
 from google.oauth2.service_account import Credentials
 
-# ================== PAGE CONFIG ================== #
-st.set_page_config("Product Ordering System", layout="wide")
-st.title("📦 Product Comparison & Ordering")
-
 # ================== GOOGLE SHEETS ================== #
 SHEET_ID = "1TsxO6Cy1bZpN-RjA_E8ZuxY9YSNJeU5lnf6jPkGbLEY"
 SHEET_NAME = "orders"
@@ -907,15 +903,15 @@ def connect_orders_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(SHEET_ID).worksheet(SHEET_NAME)
 
-def save_order(product, company, rate, qty, area):
+def save_order(product, company, rate, quantity, area):
     sheet = connect_orders_sheet()
     sheet.append_row([
         str(uuid.uuid4())[:8],
         product,
         company,
         rate,
-        qty,
-        rate * qty,
+        quantity,
+        rate * quantity,
         area,
         "NEW",
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -941,49 +937,72 @@ def load_products():
     df["RATE"] = pd.to_numeric(df["RATE"], errors="coerce")
     return df.dropna(subset=["PRODUCT_NAME", "COMPANY", "RATE"])
 
+# ================== APP ================== #
+st.set_page_config("Product Ordering System", layout="wide")
+st.title("📦 Product Comparison & Ordering")
+
 df = load_products()
 
-# ================== DEALERS (AREA BASED) ================== #
-AREA_TO_DEALERS = {
-    "Mumbai": [
-        {
-            "name": "Shree Traders",
-            "gst": "27ABCDE1234F1Z5",
-            "phone": "919106861749",
-        },
-        {
-            "name": "Om Enterprises",
-            "gst": "27XYZDE9876Q1Z2",
-            "phone": "918780701769",
-        },
-    ],
-    "Delhi": [
-        {
-            "name": "Delhi Hardware",
-            "gst": "07AAAAA1111A1Z1",
-            "phone": "919999999999",
-        }
-    ],
+# ================== AREA → WHATSAPP ================== #
+AREA_TO_WHATSAPP = {
+    "Mumbai": ["919106861749", "918780701769"],
+    "Delhi": ["918866296663"],
+    "Bangalore": ["918888888888"],
 }
 
-selected_area = st.selectbox("📍 Select Area", AREA_TO_DEALERS.keys())
-active_dealers = AREA_TO_DEALERS[selected_area]
+selected_area = st.selectbox("📍 Select Area", AREA_TO_WHATSAPP.keys())
+active_numbers = AREA_TO_WHATSAPP[selected_area]
 
 # ================== FILTERS ================== #
-c1, c2, c3, c4, c5 = st.columns(5)
+cols = st.columns(5)
 
-products = c1.multiselect("Product", sorted(df["PRODUCT_NAME"].unique()))
-companies = c2.multiselect("Company", sorted(df["COMPANY"].unique()))
-sizes = c3.multiselect("Size", sorted(df["SIZE"].dropna().unique()))
-heights = c4.multiselect("Height", sorted(df["HEIGHT"].dropna().unique()))
-weights = c5.multiselect("Weight", sorted(df["WEIGHT"].dropna().unique()))
+products = cols[0].multiselect(
+    "Product", sorted(df["PRODUCT_NAME"].unique())
+)
 
+companies = cols[1].multiselect(
+    "Company", sorted(df["COMPANY"].unique())
+)
+
+product_selected = len(products) > 0
+
+# ---------------- FILTER DATA EARLY ---------------- #
 filtered = df.copy()
-if products: filtered = filtered[filtered["PRODUCT_NAME"].isin(products)]
-if companies: filtered = filtered[filtered["COMPANY"].isin(companies)]
-if sizes: filtered = filtered[filtered["SIZE"].isin(sizes)]
-if heights: filtered = filtered[filtered["HEIGHT"].isin(heights)]
-if weights: filtered = filtered[filtered["WEIGHT"].isin(weights)]
+
+if product_selected:
+    filtered = filtered[filtered["PRODUCT_NAME"].isin(products)]
+
+if companies:
+    filtered = filtered[filtered["COMPANY"].isin(companies)]
+
+# ---------------- DYNAMIC SPEC FILTERS ---------------- #
+sizes, heights, weights = [], [], []
+
+if product_selected:
+    if filtered["SIZE"].notna().any():
+        sizes = cols[2].multiselect(
+            "Size", sorted(filtered["SIZE"].dropna().unique())
+        )
+
+    if filtered["HEIGHT"].notna().any():
+        heights = cols[3].multiselect(
+            "Height", sorted(filtered["HEIGHT"].dropna().unique())
+        )
+
+    if filtered["WEIGHT"].notna().any():
+        weights = cols[4].multiselect(
+            "Weight", sorted(filtered["WEIGHT"].dropna().unique())
+        )
+
+# ---------------- APPLY SPEC FILTERS ---------------- #
+if sizes:
+    filtered = filtered[filtered["SIZE"].isin(sizes)]
+
+if heights:
+    filtered = filtered[filtered["HEIGHT"].isin(heights)]
+
+if weights:
+    filtered = filtered[filtered["WEIGHT"].isin(weights)]
 
 if filtered.empty:
     st.warning("No products found")
@@ -992,38 +1011,38 @@ if filtered.empty:
 # ================== SESSION STATE ================== #
 st.session_state.setdefault("buy_row", None)
 st.session_state.setdefault("order_saved", False)
-st.session_state.setdefault("last_order", None)
+st.session_state.setdefault("last_order_data", None)
 
-# ================== PRODUCT LIST ================== #
-st.subheader("🧾 Products")
+# ================== PRODUCT TABLE ================== #
+st.subheader("Products")
 
 for idx, row in filtered.iterrows():
-    col1, col2, col3, col4, col5, col6 = st.columns([2, 2, 2, 1, 1, 1])
+    col1, col2, col3, col4, col5, col6 = st.columns([2,2,2,1,1,1])
 
     col1.write(row["COMPANY"])
     col2.write(row["COMPANY_CODE_NAME"])
     col3.write(row["PRODUCT_CODE_NUMBER"])
     col4.write(row["SIZE"] if pd.notna(row["SIZE"]) else "")
-    col5.write(f"₹{int(row['RATE'])}")
+    col5.write(f"₹{row['RATE']}")
 
     if col6.button("🛒 Buy", key=f"buy_{idx}"):
         st.session_state.buy_row = row
         st.session_state.order_saved = False
 
-# ================== ORDER CONFIRM ================== #
+# ================== BUY POPUP ================== #
 if st.session_state.buy_row is not None:
     st.divider()
     st.subheader("🛒 Confirm Order")
 
     row = st.session_state.buy_row
-    qty = st.number_input("Quantity", min_value=1, step=1)
+    quantity = st.number_input("Quantity", min_value=1, step=1)
 
     if st.button("✅ Confirm Order"):
         save_order(
             row["COMPANY_CODE_NAME"],
             row["COMPANY"],
             row["RATE"],
-            qty,
+            quantity,
             selected_area,
         )
 
@@ -1032,14 +1051,14 @@ New Order 📦
 Area: {selected_area}
 Product: {row['COMPANY_CODE_NAME']}
 Company: {row['COMPANY']}
-Quantity: {qty}
+Quantity: {quantity}
 Rate: ₹{row['RATE']}
-Total: ₹{row['RATE'] * qty}
+Total: ₹{row['RATE'] * quantity}
 """
 
-        st.session_state.last_order = {
-            "msg": urllib.parse.quote(message),
-            "dealers": active_dealers,
+        st.session_state.last_order_data = {
+            "message": urllib.parse.quote(message),
+            "dealers": active_numbers,
         }
 
         st.session_state.order_saved = True
@@ -1047,41 +1066,31 @@ Total: ₹{row['RATE'] * qty}
         st.success("✅ Order saved successfully")
 
 # ================== DEALER SELECTION ================== #
-if st.session_state.order_saved and st.session_state.last_order:
+if st.session_state.order_saved and st.session_state.last_order_data:
     st.divider()
     st.subheader("📨 Send Order to Dealer")
 
-    encoded_msg = st.session_state.last_order["msg"]
+    dealers = st.session_state.last_order_data["dealers"]
+    encoded_msg = st.session_state.last_order_data["message"]
 
-    for dealer in st.session_state.last_order["dealers"]:
-        st.markdown(f"""
-**🏪 Dealer:** {dealer['name']}  
-**🧾 GST:** `{dealer['gst']}`  
-**📞 Phone:** {dealer['phone']}
-""")
-
-        st.markdown(
-            f"""
-            <a href="https://wa.me/{dealer['phone']}?text={encoded_msg}" target="_blank">
-            <button style="
-                padding:10px 18px;
-                background:#25D366;
-                color:white;
-                border:none;
-                border-radius:8px;
-                font-size:15px;
-            ">
-            Send WhatsApp
-            </button>
-            </a>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.divider()
+    cols = st.columns(len(dealers))
+    for i, num in enumerate(dealers):
+        with cols[i]:
+            st.markdown(
+                f"""
+                <a href="https://wa.me/{num}?text={encoded_msg}" target="_blank">
+                <button style="width:100%;padding:12px;background:#25D366;color:white;
+                border:none;border-radius:8px;font-size:16px;">
+                Send to {num}
+                </button>
+                </a>
+                """,
+                unsafe_allow_html=True,
+            )
 
     if st.button("❌ Cancel"):
         st.session_state.order_saved = False
-        st.session_state.last_order = None
+        st.session_state.last_order_data = None
 
 st.caption("Powered by Streamlit • Google Sheets • WhatsApp")
 
