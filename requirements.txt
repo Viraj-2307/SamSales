@@ -1,0 +1,12 @@
+PyMuPDF
+pytesseract
+pdf2image
+pandas
+opencv-python
+pillow
+lxml
+streamlit
+twilio
+gspread
+oauth2client
+openpyxl
