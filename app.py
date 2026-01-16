@@ -93,9 +93,35 @@ AREA_TO_WHATSAPP = {
     "Delhi": ["918866296663"],
     "Bangalore": ["918888888888"],
 }
+AREA_TO_DEALERS = {
+    "Mumbai": [
+        {
+            "dealer_name": "Rahul Traders",
+            "shop_name": "Rahul Cement Store",
+            "gst": "27ABCDE1234F1Z5",
+            "whatsapp": "919106861749",
+        },
+        {
+            "dealer_name": "Sharma Enterprises",
+            "shop_name": "Sharma Hardware",
+            "gst": "27PQRSX9876L1Z2",
+            "whatsapp": "918780701769",
+        },
+    ],
+    "Delhi": [
+        {
+            "dealer_name": "Gupta Agencies",
+            "shop_name": "Gupta Building Mart",
+            "gst": "07ABCDE9999F1Z9",
+            "whatsapp": "918866296663",
+        }
+    ],
+}
 
-selected_area = st.selectbox("📍 Select Area", AREA_TO_WHATSAPP.keys())
-active_numbers = AREA_TO_WHATSAPP[selected_area]
+# selected_area = st.selectbox("📍 Select Area", AREA_TO_WHATSAPP.keys())
+# active_numbers = AREA_TO_WHATSAPP[selected_area]
+selected_area = st.selectbox("📍 Select Area", AREA_TO_DEALERS.keys())
+active_dealers = AREA_TO_DEALERS[selected_area]
 
 # ================== FILTERS ================== #
 cols = st.columns(5)
@@ -199,7 +225,7 @@ Total: ₹{row['RATE'] * quantity}
 
         st.session_state.last_order_data = {
             "message": urllib.parse.quote(message),
-            "dealers": active_numbers,
+            "dealers": active_dealers,
         }
 
         st.session_state.order_saved = True
@@ -207,23 +233,65 @@ Total: ₹{row['RATE'] * quantity}
         st.success("✅ Order saved successfully")
 
 # ================== DEALER SELECTION ================== #
+# if st.session_state.order_saved and st.session_state.last_order_data:
+#     st.divider()
+#     st.subheader("📨 Send Order to Dealer")
+
+#     dealers = st.session_state.last_order_data["dealers"]
+#     encoded_msg = st.session_state.last_order_data["message"]
+
+#     cols = st.columns(len(dealers))
+#     for i, num in enumerate(dealers):
+#         with cols[i]:
+#             st.markdown(
+#                 f"""
+#                 <a href="https://wa.me/{num}?text={encoded_msg}" target="_blank">
+#                 <button style="width:100%;padding:12px;background:#25D366;color:white;
+#                 border:none;border-radius:8px;font-size:16px;">
+#                 Send to {num}
+#                 </button>
+#                 </a>
+#                 """,
+#                 unsafe_allow_html=True,
+#             )
+
+#     if st.button("❌ Cancel"):
+#         st.session_state.order_saved = False
+#         st.session_state.last_order_data = None
+
 if st.session_state.order_saved and st.session_state.last_order_data:
     st.divider()
     st.subheader("📨 Send Order to Dealer")
 
-    dealers = st.session_state.last_order_data["dealers"]
     encoded_msg = st.session_state.last_order_data["message"]
+    dealers = st.session_state.last_order_data["dealers"]
 
-    cols = st.columns(len(dealers))
-    for i, num in enumerate(dealers):
-        with cols[i]:
+    for dealer in dealers:
+        with st.container(border=True):
+            st.markdown(f"""
+**🧑 Dealer:** {dealer['dealer_name']}  
+**🏪 Shop:** {dealer['shop_name']}  
+**🧾 GST:** {dealer['gst']}  
+**📞 WhatsApp:** {dealer['whatsapp']}
+""")
+
+            whatsapp_url = f"https://wa.me/{dealer['whatsapp']}?text={encoded_msg}"
+
             st.markdown(
                 f"""
-                <a href="https://wa.me/{num}?text={encoded_msg}" target="_blank">
-                <button style="width:100%;padding:12px;background:#25D366;color:white;
-                border:none;border-radius:8px;font-size:16px;">
-                Send to {num}
-                </button>
+                <a href="{whatsapp_url}" target="_blank">
+                    <button style="
+                        width:100%;
+                        padding:12px;
+                        background:#25D366;
+                        color:white;
+                        border:none;
+                        border-radius:8px;
+                        font-size:16px;
+                        margin-top:10px;
+                    ">
+                        Send Order to {dealer['dealer_name']}
+                    </button>
                 </a>
                 """,
                 unsafe_allow_html=True,
